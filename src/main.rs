@@ -1,24 +1,21 @@
 #[macro_use]
+extern crate diesel_migrations;
+embed_migrations!();
+#[macro_use]
 extern crate rocket;
 #[macro_use]
 extern crate rocket_sync_db_pools;
 #[macro_use]
 extern crate diesel;
-#[macro_use]
-extern crate diesel_migrations;
 
-use crate::diesel::RunQueryDsl;
-
-use crate::diesel::ExpressionMethods;
-use crate::diesel::QueryDsl;
 use models::*;
+use repositories::UsersRepository;
+use rocket::http::Status;
 use rocket::response::status;
-use schema::*;
-#[macro_use]
-use rocket::serde::json::{json, Value, Json};
-
+use rocket::serde::json::{json, Json, Value};
 mod auth;
 mod models;
+mod repositories;
 mod schema;
 use auth::BasicAuth;
 
@@ -26,63 +23,68 @@ use auth::BasicAuth;
 struct DbConn(diesel::SqliteConnection);
 
 #[get("/users")]
-async fn get_users(auth: BasicAuth, conn: DbConn) -> Value {
+async fn get_users(_auth: BasicAuth, conn: DbConn) -> Result<Value, status::Custom<Value>> {
     conn.run(|c| {
-        let all = users::table
-            .limit(100)
-            .load::<User>(c)
-            .expect("Error loading Users from db");
-        json!(all)
+        UsersRepository::load_all(c)
+            .map(|users| json!(users))
+            .map_err(|e| status::Custom(Status::InternalServerError, json!(e.to_string())))
     })
     .await
 }
 
 #[get("/users/<id>")]
-async fn view_user(id: i32, auth: BasicAuth, conn: DbConn) -> Value {
+async fn view_user(
+    id: i32,
+    _auth: BasicAuth,
+    conn: DbConn,
+) -> Result<Value, status::Custom<Value>> {
     conn.run(move |c| {
-        let user = users::table
-            .find(id)
-            .get_result::<User>(c)
-            .expect("Could not load user!");
-        json!(user)
+        UsersRepository::find(c, id)
+            .map(|users| json!(users))
+            .map_err(|e| status::Custom(Status::InternalServerError, json!(e.to_string())))
     })
     .await
 }
 
 #[post("/users", format = "json", data = "<new_user>")]
-async fn create_user(auth: BasicAuth, conn: DbConn, new_user: Json<NewUser>) -> Value {
+async fn create_user(
+    _auth: BasicAuth,
+    conn: DbConn,
+    new_user: Json<NewUser>,
+) -> Result<Value, status::Custom<Value>> {
     conn.run(|c| {
-        let result = diesel::insert_into(users::table)
-            .values(new_user.into_inner())
-            .execute(c)
-            .expect("Error adding user to DB");
-        json!(result)
+        UsersRepository::create(c, new_user.into_inner())
+            .map(|users| json!(users))
+            .map_err(|e| status::Custom(Status::InternalServerError, json!(e.to_string())))
     })
     .await
 }
 
-#[put("/users/<id>", format = "json", data = "<user>")]
-async fn update_user(id: i32, auth: BasicAuth, conn: DbConn, user: Json<User>) -> Value {
+#[put("/users/<_id>", format = "json", data = "<user>")]
+async fn update_user(
+    _id: i32,
+    _auth: BasicAuth,
+    conn: DbConn,
+    user: Json<User>,
+) -> Result<Value, status::Custom<Value>> {
     conn.run(move |c| {
-        let result = diesel::update(users::table.find(id))
-            .set((
-                users::name.eq(user.name.to_owned()),
-                users::email.eq(user.email.to_owned()),
-            ))
-            .execute(c)
-            .expect("Error updating user {:?} into DB.");
-        json!(result)
+        UsersRepository::save(c, user.into_inner())
+            .map(|users| json!(users))
+            .map_err(|e| status::Custom(Status::InternalServerError, json!(e.to_string())))
     })
     .await
 }
 
 #[delete("/users/<id>")]
-async fn delete_user(id: i32, auth: BasicAuth, conn: DbConn) -> status::NoContent {
+async fn delete_user(
+    id: i32,
+    _auth: BasicAuth,
+    conn: DbConn,
+) -> Result<status::NoContent, status::Custom<Value>> {
     conn.run(move |c| {
-        diesel::delete(users::table.find(id))
-            .execute(c)
-            .expect("Could not delete.");
-        status::NoContent
+        UsersRepository::delete(c, id)
+            .map(|_| status::NoContent)
+            .map_err(|e| status::Custom(Status::InternalServerError, json!(e.to_string())))
     })
     .await
 }
