@@ -1,6 +1,6 @@
+extern crate base64;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
-
 pub struct BasicAuth {
     pub username: String,
     pub password: String,
@@ -28,7 +28,11 @@ impl BasicAuth {
             return None;
         } else {
             let (username, password) = (split[0].to_string(), split[1].to_string());
-            Some(BasicAuth { username, password })
+            if (username == "tim".to_string()) & (password == "123".to_string()) {
+                Some(BasicAuth { username, password })
+            } else {
+                None
+            }
         }
     }
 }
